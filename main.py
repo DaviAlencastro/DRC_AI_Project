@@ -1,22 +1,31 @@
-from transformers import pipeline
-from langchain_huggingface import HuggingFacePipeline
-from langchain.prompts import PromptTemplate
-import torch
+from langchain_openai import ChatOpenAI
+from dotenv import load_dotenv
+from typing import Annotated, Literal
+from langgraph.graph import StateGraph, START, END
+from langgraph.graph.message import add_messages
+from langchain.chat_models import init_chat_model
+from pydantic import BaseModel, Field
+from typing_extensions import TypedDict
 
-model = pipeline(
-    "text-generation",
-    model="Qwen/Qwen3-0.6B",
-    device=0,
-    max_length=256,
-    truncation=True,)
+load_dotenv()
 
-llm = HuggingFacePipeline(pipeline=model)
+llm = init_chat_model("gpt-4o-mini")
 
-template = PromptTemplate.from_template("Explain {topic} in detail for a {age} year old to understand.")
+class State(TypedDict):
+    messages: Annotated[list, add_messages]
 
-chain = template | llm
-topic = input("Topic: ")
-age = input("Age: ")
+graph_builder = StateGraph(State)
 
-response = chain.invoke({"topic": topic, "age": age})
-print(response)
+def chatbot(state: State):
+    return {"messages": [llm.invoke(state["messages"])]}
+
+graph_builder.add_node("chatbot", chatbot)
+graph_builder.add_edge(START, "chatbot")
+graph_builder.add_edge("chatbot", END)
+
+graph = graph_builder.compile()
+
+user_input = input("Enter a message: ")
+state = graph.invoke({"messages": [{"role": "user", "content": user_input}]})
+
+print(state["messages"][-1].content)
